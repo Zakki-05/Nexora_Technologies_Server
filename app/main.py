@@ -2,7 +2,11 @@ from fastapi import FastAPI, Request, status
 from fastapi.responses import JSONResponse
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
-from sqlalchemy.exc import IntegrityError, SQLAlchemyError
+from sqlalchemy.exc import IntegrityError, SQLAlchemyError, OperationalError
+import re
+import logging
+
+logger = logging.getLogger("ems.api")
 
 from fastapi.staticfiles import StaticFiles
 import os
@@ -64,13 +68,25 @@ async def integrity_exception_handler(request: Request, exc: IntegrityError):
         }
     )
 
+@app.exception_handler(OperationalError)
+async def operational_exception_handler(request: Request, exc: OperationalError):
+    safe_err = re.sub(r':([^:@]+)@', ':***@', str(exc)).split("\n")[0]
+    logger.error(f"[EMS DB Connection Error] {request.method} {request.url.path}: {safe_err}")
+    return JSONResponse(
+        status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+        content={
+            "detail": "Database service is temporarily unreachable. Please verify PostgreSQL connection and network settings."
+        }
+    )
+
 @app.exception_handler(SQLAlchemyError)
 async def sqlalchemy_exception_handler(request: Request, exc: SQLAlchemyError):
-    print(f"[EMS DB Error] {request.method} {request.url.path}: {exc}")
+    safe_err = re.sub(r':([^:@]+)@', ':***@', str(exc)).split("\n")[0]
+    logger.error(f"[EMS DB Error] {request.method} {request.url.path}: {safe_err}")
     return JSONResponse(
         status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
         content={
-            "detail": "A database error occurred. Please check server logs."
+            "detail": "A database error occurred. Please verify PostgreSQL data constraints."
         }
     )
 
@@ -115,4 +131,20 @@ def home():
 
 @app.get("/health", tags=["Health"])
 def health_check():
-    return {"status": "healthy"}
+    from app.database import check_db_connection
+    is_connected, info = check_db_connection()
+    if not is_connected:
+        return JSONResponse(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            content={
+                "status": "degraded",
+                "database": "disconnected",
+                "engine": "PostgreSQL",
+                "detail": info
+            }
+        )
+    return {
+        "status": "healthy",
+        "database": "connected",
+        "engine": "PostgreSQL"
+    }
