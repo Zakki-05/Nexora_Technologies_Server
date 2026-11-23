@@ -154,7 +154,9 @@ def get_all_employees(
             (Employee.full_name.ilike(pattern)) |
             (Employee.phone.ilike(pattern)) |
             (Employee.employee_code.ilike(pattern)) |
-            (Employee.position.ilike(pattern))
+            (Employee.position.ilike(pattern)) |
+            (Employee.user.has(User.email.ilike(pattern))) |
+            (Employee.user.has(User.username.ilike(pattern)))
         )
 
     if department_id:
