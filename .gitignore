@@ -1,0 +1,47 @@
+# Python bytecode and cache
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# Environments
+env/
+venv/
+ENV/
+.venv/
+
+# Build and distribution
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Database and Secrets
+.env
+*.db
+*.sqlite3
+ems.db
+
+# Uploaded media (keep folder structure)
+uploads/avatars/*
+!uploads/avatars/.gitkeep
+uploads/documents/*
+!uploads/documents/.gitkeep
+
+# IDE and Testing
+.pytest_cache/
+.vscode/
+.idea/
+*.log
