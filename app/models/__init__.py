@@ -17,6 +17,7 @@ from app.models.notification import Notification
 from app.models.announcement import Announcement
 from app.models.audit_log import AuditLog
 from app.models.document import EmployeeDocument
+from app.models.expense import ExpenseClaim
 
 __all__ = [
     "User",
@@ -38,4 +39,5 @@ __all__ = [
     "Announcement",
     "AuditLog",
     "EmployeeDocument",
+    "ExpenseClaim",
 ]

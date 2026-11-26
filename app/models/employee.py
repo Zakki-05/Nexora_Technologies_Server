@@ -45,3 +45,4 @@ class Employee(Base):
     salaries = relationship("Salary", back_populates="employee", cascade="all, delete-orphan")
     salary_structure = relationship("SalaryStructure", back_populates="employee", uselist=False, cascade="all, delete-orphan")
     documents = relationship("EmployeeDocument", back_populates="employee", cascade="all, delete-orphan")
+    expense_claims = relationship("ExpenseClaim", back_populates="employee", cascade="all, delete-orphan")
