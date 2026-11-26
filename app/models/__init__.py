@@ -18,8 +18,10 @@ from app.models.announcement import Announcement
 from app.models.audit_log import AuditLog
 from app.models.document import EmployeeDocument
 from app.models.expense import ExpenseClaim
+from app.models.organization import Organization
 
 __all__ = [
+    "Organization",
     "User",
     "Employee",
     "Department",

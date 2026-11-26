@@ -8,6 +8,7 @@ class Employee(Base):
     __tablename__ = "employees"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    organization_id: Mapped[int] = mapped_column(Integer, ForeignKey("organizations.id"), default=1, index=True, nullable=False)
     employee_code: Mapped[str] = mapped_column(String(50), unique=True, index=True, nullable=False)
     full_name: Mapped[str] = mapped_column("name", String(100), index=True, nullable=False)
     phone: Mapped[str] = mapped_column("phone_number", String(20), unique=True, nullable=False)
@@ -35,6 +36,7 @@ class Employee(Base):
         return self.user.email if self.user else None
 
     user = relationship("User", back_populates="employee")
+    organization = relationship("Organization", back_populates="employees")
     department = relationship("Department", back_populates="employees")
     leaves = relationship("Leave", foreign_keys="Leave.employee_id", back_populates="employee", cascade="all, delete-orphan")
     attendances = relationship("Attendance", back_populates="employee", cascade="all, delete-orphan")

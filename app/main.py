@@ -27,7 +27,8 @@ from app.routers import (
     audit_logs,
     documents,
     reports,
-    expenses
+    expenses,
+    organizations
 )
 
 app = FastAPI(
@@ -122,6 +123,7 @@ app.include_router(audit_logs.router, prefix="/audit-logs", tags=["Audit Logs"])
 app.include_router(documents.router, prefix="/documents", tags=["Documents"])
 app.include_router(reports.router, prefix="/reports", tags=["Reports"])
 app.include_router(expenses.router, prefix="/expenses", tags=["Expenses"])
+app.include_router(organizations.router, prefix="/organizations", tags=["Organizations"])
 
 @app.get("/", tags=["Home"])
 def home():
