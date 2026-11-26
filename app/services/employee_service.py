@@ -591,7 +591,7 @@ def review_avatar_request(
         notif = Notification(
             user_id=employee.user_id,
             title="Profile Photo Approved",
-            message="Your updated profile picture has been approved by HR and is now active across WorkPulse.",
+            message="Your updated profile picture has been approved by HR and is now active across Nexora Workforce.",
             type="AVATAR_APPROVED",
             is_read=False
         )
