@@ -52,10 +52,16 @@ def get_all_departments(
     )
 
 def get_all_departments_list(db: Session) -> List[DepartmentResponse]:
-    departments = db.query(Department).order_by(Department.name.asc()).all()
+    # Single optimized query with outerjoin and group_by to eliminate N+1 queries
+    query_results = (
+        db.query(Department, func.count(Employee.id).label("emp_count"))
+        .outerjoin(Employee, Employee.department_id == Department.id)
+        .group_by(Department.id)
+        .order_by(Department.name.asc())
+        .all()
+    )
     results = []
-    for dept in departments:
-        count = db.query(Employee).filter(Employee.department_id == dept.id).count()
+    for dept, count in query_results:
         resp = DepartmentResponse.model_validate(dept)
         resp.employee_count = count
         results.append(resp)

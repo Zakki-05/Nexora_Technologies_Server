@@ -2,7 +2,7 @@ from datetime import date
 from typing import Annotated, Optional
 from decimal import Decimal
 from fastapi import APIRouter, Depends
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import func
 
 from app.database import get_db
@@ -50,15 +50,27 @@ def get_admin_dashboard(
         Employee.employment_status == "ACTIVE"
     ).scalar() or Decimal("0.00")
 
-    # Department distribution for charts
-    dept_distribution = []
-    departments = db.query(Department).all()
-    for d in departments:
-        count = db.query(Employee).filter(Employee.department_id == d.id).count()
-        dept_distribution.append({"department_id": d.id, "name": d.name, "count": count})
+    # Department distribution for charts - single optimized query eliminating N+1 loop
+    dept_distribution_raw = (
+        db.query(Department.id, Department.name, func.count(Employee.id).label("count"))
+        .outerjoin(Employee, Employee.department_id == Department.id)
+        .group_by(Department.id, Department.name)
+        .order_by(func.count(Employee.id).desc())
+        .all()
+    )
+    dept_distribution = [
+        {"department_id": d_id, "name": d_name, "count": count}
+        for d_id, d_name, count in dept_distribution_raw
+    ]
 
-    # Recent leaves
-    recent_leaves_query = db.query(Leave).order_by(Leave.id.desc()).limit(5).all()
+    # Recent leaves with eager employee loading
+    recent_leaves_query = (
+        db.query(Leave)
+        .options(joinedload(Leave.employee))
+        .order_by(Leave.id.desc())
+        .limit(5)
+        .all()
+    )
     recent_leaves = []
     for lv in recent_leaves_query:
         emp_name = lv.employee.full_name if lv.employee else "Unknown"
