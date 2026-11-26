@@ -4,7 +4,13 @@ from fastapi import HTTPException, status
 from app.models.user import User
 from app.schemas.auth import UserRegister, UserLogin, PasswordChange, UserResponse
 from app.schemas.common import PaginatedResponse
-from app.utils.security import hash_password, verify_password, create_access_token
+from app.utils.security import (
+    hash_password,
+    verify_password,
+    create_access_token,
+    create_refresh_token,
+    decode_refresh_token
+)
 from app.utils.validators import normalize_role
 from app.utils.pagination import paginate
 
@@ -184,9 +190,46 @@ def login_user(data: UserLogin, db: Session) -> dict:
     access_token = create_access_token(
         data={"sub": str(user.id), "role": user.role}
     )
+    refresh_token = create_refresh_token(
+        data={"sub": str(user.id), "role": user.role}
+    )
 
     return {
         "access_token": access_token,
+        "refresh_token": refresh_token,
+        "token_type": "bearer",
+        "user": user
+    }
+
+def refresh_access_token(refresh_token: str, db: Session) -> dict:
+    try:
+        payload = decode_refresh_token(refresh_token)
+        user_id = payload.get("sub")
+        if not user_id:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid refresh token payload"
+            )
+        user_id = int(user_id)
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail=f"Invalid or expired refresh token: {str(exc)}"
+        )
+
+    user = db.query(User).options(joinedload(User.employee)).filter(User.id == user_id).first()
+    if not user or not user.is_active:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="User account not found or deactivated"
+        )
+
+    new_access_token = create_access_token(data={"sub": str(user.id), "role": user.role})
+    new_refresh_token = create_refresh_token(data={"sub": str(user.id), "role": user.role})
+
+    return {
+        "access_token": new_access_token,
+        "refresh_token": new_refresh_token,
         "token_type": "bearer",
         "user": user
     }

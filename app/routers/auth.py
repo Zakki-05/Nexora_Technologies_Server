@@ -1,5 +1,5 @@
 from typing import Annotated, Optional
-from fastapi import APIRouter, Depends, status, Query
+from fastapi import APIRouter, Depends, status, Query, Request
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
 
@@ -10,6 +10,7 @@ from app.schemas.auth import (
     UserRegister,
     UserResponse,
     Token,
+    RefreshTokenRequest,
     PasswordChange,
     UserStatusUpdate,
     UserRoleUpdate
@@ -18,6 +19,7 @@ from app.schemas.common import MessageResponse, PaginatedResponse
 from app.services import auth_service
 from app.dependencies.auth import get_current_user, get_optional_current_user
 from app.dependencies.permissions import get_current_admin, get_current_super_admin
+from app.utils.rate_limiter import login_rate_limiter, refresh_rate_limiter
 
 router = APIRouter()
 
@@ -28,22 +30,36 @@ def register(
     current_user: Annotated[Optional[User], Depends(get_optional_current_user)] = None
 ):
     return auth_service.register_user(data, db, current_user)
+
 @router.post("/login", response_model=Token)
 def login(
+    request: Request,
     data: UserLogin,
     db: Annotated[Session, Depends(get_db)]
 ):
+    login_rate_limiter.check(request)
     return auth_service.login_user(data, db)
 
 @router.post("/token", response_model=Token)
 def token(
+    request: Request,
     form_data: Annotated[OAuth2PasswordRequestForm, Depends()],
     db: Annotated[Session, Depends(get_db)],
 ):
+    login_rate_limiter.check(request)
     return auth_service.login_user(
         UserLogin(email=form_data.username, password=form_data.password),
         db,
     )
+
+@router.post("/refresh", response_model=Token)
+def refresh_token(
+    request: Request,
+    data: RefreshTokenRequest,
+    db: Annotated[Session, Depends(get_db)]
+):
+    refresh_rate_limiter.check(request)
+    return auth_service.refresh_access_token(data.refresh_token, db)
 
 @router.get("/me", response_model=UserResponse)
 def get_profile(
