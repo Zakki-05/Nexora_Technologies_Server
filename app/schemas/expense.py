@@ -1,7 +1,7 @@
 from datetime import date, datetime
 from decimal import Decimal
 from typing import List, Optional
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ConfigDict
 
 class ExpenseClaimBase(BaseModel):
     title: str = Field(..., max_length=200)
@@ -20,6 +20,7 @@ class ExpenseClaimReview(BaseModel):
     remarks: Optional[str] = None
 
 class ExpenseClaimResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
     id: int
     employee_id: int
     employee_name: str
@@ -35,9 +36,6 @@ class ExpenseClaimResponse(BaseModel):
     receipt_name: Optional[str] = None
     reviewer_remarks: Optional[str] = None
     created_at: str
-
-    class Config:
-        from_attributes = True
 
 class ExpenseListResponse(BaseModel):
     items: List[ExpenseClaimResponse]

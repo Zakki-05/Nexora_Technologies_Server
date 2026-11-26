@@ -112,8 +112,10 @@ def check_in(employee_id: int, db: Session) -> Attendance:
         ).first()
 
         if active_session:
-            # Idempotent: already punched in, return current attendance without error
-            return attendance
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="You are already punched in for an active session."
+            )
     else:
         # First check-in of the day
         is_late = current_time > policy.late_threshold_time
@@ -172,28 +174,10 @@ def check_out(employee_id: int, db: Session) -> Attendance:
     ).first()
 
     if not attendance:
-        # Auto-provision daily check-in and immediately close for seamless user experience
-        attendance = Attendance(
-            employee_id=employee_id,
-            date=today,
-            check_in=current_time,
-            check_out=current_time,
-            work_hours=Decimal("0.00"),
-            office_duration_minutes=0,
-            actual_working_minutes=0,
-            total_break_minutes=0,
-            paid_break_minutes=0,
-            unpaid_break_minutes=0,
-            overtime_minutes=0,
-            is_late=False,
-            is_incomplete=False,
-            status="PRESENT",
-            remarks="Recorded shift punch-out"
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="No active check-in found for today. Please punch in first."
         )
-        db.add(attendance)
-        db.commit()
-        db.refresh(attendance)
-        return attendance
 
     active_session = db.query(AttendanceSession).filter(
         AttendanceSession.attendance_id == attendance.id,
@@ -202,8 +186,10 @@ def check_out(employee_id: int, db: Session) -> Attendance:
     ).first()
 
     if not active_session:
-        # Idempotent: already punched out today, return attendance cleanly
-        return attendance
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="You have already punched out. Please punch in to start a new session."
+        )
 
     # Auto-close any active break
     active_break = db.query(BreakSession).filter(

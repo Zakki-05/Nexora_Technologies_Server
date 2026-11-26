@@ -1,3 +1,4 @@
+from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request, status
 from fastapi.responses import JSONResponse
 from fastapi.exceptions import RequestValidationError
@@ -5,11 +6,11 @@ from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError, OperationalError
 import re
 import logging
+import os
 
 logger = logging.getLogger("ems.api")
 
 from fastapi.staticfiles import StaticFiles
-import os
 
 from app.routers import (
     auth,
@@ -31,20 +32,48 @@ from app.routers import (
     organizations
 )
 
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    from app.database import init_db
+    init_db()
+    yield
+
 app = FastAPI(
     title="Nexora Workforce API",
     description="Enterprise API for workforce management, employee records, payroll, leave tracking, documents, and attendance by Nexora Technologies.",
-    version="2.0.0"
+    version="2.0.0",
+    lifespan=lifespan
 )
 
-# CORS Configuration - Supports Localhost, Render, Vercel, and custom production domains
+# CORS Configuration - Explicit trusted origins + configurable ALLOWED_ORIGINS env var
+default_origins = [
+    "https://nexoratechnologieszakki.vercel.app",
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
+    "http://localhost:3000",
+    "capacitor://localhost",
+    "https://localhost",
+]
+extra_origins = [o.strip() for o in os.getenv("ALLOWED_ORIGINS", "").split(",") if o.strip()]
+allowed_origins = list(dict.fromkeys(default_origins + extra_origins))
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origin_regex=r"^https?://.*",
+    allow_origins=allowed_origins,
+    allow_origin_regex=r"^https://nexora-technologies-ui.*\.vercel\.app$",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+@app.middleware("http")
+async def add_security_headers(request: Request, call_next):
+    response = await call_next(request)
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["X-XSS-Protection"] = "1; mode=block"
+    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    return response
 
 # Centralized Error Handlers
 @app.exception_handler(RequestValidationError)
@@ -91,11 +120,6 @@ async def sqlalchemy_exception_handler(request: Request, exc: SQLAlchemyError):
             "detail": "A database error occurred. Please verify PostgreSQL data constraints."
         }
     )
-
-@app.on_event("startup")
-def on_startup():
-    from app.database import init_db
-    init_db()
 
 # Ensure uploads folders exist & mount static uploads
 UPLOAD_DIR = os.getenv("UPLOAD_DIR", "/tmp/uploads" if os.environ.get("VERCEL") else os.path.join(os.getcwd(), "uploads"))
