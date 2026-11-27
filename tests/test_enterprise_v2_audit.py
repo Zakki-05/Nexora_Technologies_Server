@@ -90,7 +90,10 @@ def test_refresh_token_rotation_flow(v2_client, v2_seed):
         "password": "StrongEmpPass!99"
     })
     assert login_res.status_code == 200
-    data = login_res.json()
+    body = login_res.json()
+    assert body["success"] is True
+    assert body["status_code"] == 200
+    data = body["data"]
     assert "access_token" in data
     assert "refresh_token" in data
 
@@ -98,7 +101,7 @@ def test_refresh_token_rotation_flow(v2_client, v2_seed):
         "refresh_token": data["refresh_token"]
     })
     assert refresh_res.status_code == 200
-    refreshed = refresh_res.json()
+    refreshed = refresh_res.json()["data"]
     assert "access_token" in refreshed
     assert "refresh_token" in refreshed
 
@@ -107,6 +110,9 @@ def test_refresh_token_rotation_flow(v2_client, v2_seed):
         "refresh_token": data["access_token"]
     })
     assert bad_res.status_code == 401
+    assert bad_res.json()["success"] is False
+    assert bad_res.json()["status_code"] == 401
+    assert bad_res.json()["data"] == {}
 
 def test_expense_claims_rbac_and_lifecycle(v2_client, v2_seed):
     emp_token = create_access_token({"sub": str(v2_seed["employee"].id), "role": "EMPLOYEE"})
@@ -125,8 +131,9 @@ def test_expense_claims_rbac_and_lifecycle(v2_client, v2_seed):
         }
     )
     assert create_res.status_code == 201
-    claim_id = create_res.json()["id"]
-    assert create_res.json()["status"] == "PENDING"
+    claim_data = create_res.json()["data"]
+    claim_id = claim_data["id"]
+    assert claim_data["status"] == "PENDING"
 
     # 2. Employee CANNOT approve own claim (403 Forbidden)
     forbidden_res = v2_client.patch(
@@ -135,6 +142,7 @@ def test_expense_claims_rbac_and_lifecycle(v2_client, v2_seed):
         json={"status": "APPROVED", "approved_amount": 2500.00}
     )
     assert forbidden_res.status_code == 403
+    assert forbidden_res.json()["success"] is False
 
     # 3. Admin approves claim
     approve_res = v2_client.patch(
@@ -143,7 +151,7 @@ def test_expense_claims_rbac_and_lifecycle(v2_client, v2_seed):
         json={"status": "APPROVED", "approved_amount": 2500.00, "remarks": "Approved"}
     )
     assert approve_res.status_code == 200
-    assert approve_res.json()["status"] == "APPROVED"
+    assert approve_res.json()["data"]["status"] == "APPROVED"
 
     # 4. Employee cannot delete already reviewed claim
     del_res = v2_client.delete(
@@ -157,16 +165,16 @@ def test_organization_and_subscription_endpoints(v2_client, v2_seed):
 
     org_res = v2_client.get("/organizations/current", headers={"Authorization": f"Bearer {emp_token}"})
     assert org_res.status_code == 200
-    assert org_res.json()["company_code"] == "NEX-001"
+    assert org_res.json()["data"]["company_code"] == "NEX-001"
 
     plans_res = v2_client.get("/organizations/subscription/plans")
     assert plans_res.status_code == 200
-    assert len(plans_res.json()["plans"]) == 4
+    assert len(plans_res.json()["data"]["plans"]) == 4
 
     sub_res = v2_client.get("/organizations/current/subscription", headers={"Authorization": f"Bearer {emp_token}"})
     assert sub_res.status_code == 200
-    assert sub_res.json()["subscription_plan"] == "ENTERPRISE"
-    assert sub_res.json()["usage"]["current_employees"] == 2
+    assert sub_res.json()["data"]["subscription_plan"] == "ENTERPRISE"
+    assert sub_res.json()["data"]["usage"]["current_employees"] == 2
 
 def test_security_headers_present(v2_client):
     res = v2_client.get("/")

@@ -1,12 +1,20 @@
 from contextlib import asynccontextmanager
-from fastapi import FastAPI, Request, status
-from fastapi.responses import JSONResponse
+from fastapi import FastAPI, Request, status, HTTPException
+from fastapi.responses import JSONResponse, Response
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError, OperationalError
 import re
 import logging
 import os
+
+from app.utils.response_formatter import (
+    build_success_message,
+    wrap_error_payload,
+    wrap_success_payload,
+    should_wrap_response,
+    try_parse_json,
+)
 
 logger = logging.getLogger("ems.api")
 
@@ -66,16 +74,94 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-@app.middleware("http")
-async def add_security_headers(request: Request, call_next):
-    response = await call_next(request)
-    response.headers["X-Content-Type-Options"] = "nosniff"
-    response.headers["X-Frame-Options"] = "DENY"
-    response.headers["X-XSS-Protection"] = "1; mode=block"
-    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
-    return response
+class ResponseEnvelopeMiddleware:
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+
+        path = (scope.get("path") or "/").rstrip("/") or "/"
+        method = scope.get("method", "GET")
+
+        # Skip docs, OAuth2 token endpoint, and static uploads
+        if path in {"/openapi.json", "/docs", "/redoc", "/docs/oauth2-redirect", "/auth/token"} or path.startswith("/uploads"):
+            async def send_with_headers(message):
+                if message["type"] == "http.response.start":
+                    headers = list(message.get("headers", []))
+                    headers.extend([
+                        (b"x-content-type-options", b"nosniff"),
+                        (b"x-frame-options", b"DENY"),
+                        (b"x-xss-protection", b"1; mode=block"),
+                        (b"referrer-policy", b"strict-origin-when-cross-origin"),
+                    ])
+                    message["headers"] = headers
+                await send(message)
+
+            await self.app(scope, receive, send_with_headers)
+            return
+
+        response_start = None
+        body_chunks = []
+
+        async def capture_send(message):
+            nonlocal response_start
+            if message["type"] == "http.response.start":
+                response_start = message
+            elif message["type"] == "http.response.body":
+                body_chunks.append(message.get("body", b""))
+                if not message.get("more_body", False):
+                    raw_headers = list(response_start.get("headers", []))
+                    headers_dict = {k.decode("latin-1").lower(): v.decode("latin-1") for k, v in raw_headers}
+                    content_type = headers_dict.get("content-type", "")
+                    status_code = response_start["status"]
+                    full_body = b"".join(body_chunks)
+
+                    if "application/json" in content_type.lower():
+                        parsed = try_parse_json(full_body)
+                        if parsed is not None:
+                            if isinstance(parsed, dict) and {"success", "message", "status_code", "data"}.issubset(parsed.keys()):
+                                wrapped = parsed
+                            elif status_code >= 400:
+                                err_msg = parsed.get("detail") if isinstance(parsed, dict) else "Request failed"
+                                if isinstance(err_msg, list):
+                                    err_msg = "; ".join(str(item) for item in err_msg)
+                                wrapped = wrap_error_payload(status_code, str(err_msg or "Request failed"))
+                            else:
+                                msg = build_success_message(method, path, parsed)
+                                wrapped = wrap_success_payload(status_code, msg, parsed)
+
+                            import json as _json
+                            full_body = _json.dumps(wrapped).encode("utf-8")
+                            raw_headers = [(k, v) for k, v in raw_headers if k.lower() != b"content-length"]
+                            raw_headers.append((b"content-length", str(len(full_body)).encode("latin-1")))
+
+                    raw_headers.extend([
+                        (b"x-content-type-options", b"nosniff"),
+                        (b"x-frame-options", b"DENY"),
+                        (b"x-xss-protection", b"1; mode=block"),
+                        (b"referrer-policy", b"strict-origin-when-cross-origin"),
+                    ])
+                    response_start["headers"] = raw_headers
+                    await send(response_start)
+                    await send({"type": "http.response.body", "body": full_body, "more_body": False})
+
+        await self.app(scope, receive, capture_send)
+
+app.add_middleware(ResponseEnvelopeMiddleware)
 
 # Centralized Error Handlers
+@app.exception_handler(HTTPException)
+async def http_exception_handler(request: Request, exc: HTTPException):
+    detail = exc.detail if isinstance(exc.detail, str) else str(exc.detail)
+    return JSONResponse(
+        status_code=exc.status_code,
+        content=wrap_error_payload(exc.status_code, detail),
+        headers=exc.headers,
+    )
+
 @app.exception_handler(RequestValidationError)
 async def validation_exception_handler(request: Request, exc: RequestValidationError):
     errors = []
@@ -84,19 +170,21 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
         errors.append(f"{field}: {err.get('msg')}")
     return JSONResponse(
         status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-        content={
-            "detail": "Validation error: " + "; ".join(errors),
-            "errors": exc.errors()
-        }
+        content=wrap_error_payload(
+            status.HTTP_422_UNPROCESSABLE_ENTITY,
+            "Validation error: " + "; ".join(errors),
+            {"errors": exc.errors()},
+        ),
     )
 
 @app.exception_handler(IntegrityError)
 async def integrity_exception_handler(request: Request, exc: IntegrityError):
     return JSONResponse(
         status_code=status.HTTP_409_CONFLICT,
-        content={
-            "detail": "Database conflict or constraint violation. Ensure unique fields are not duplicated."
-        }
+        content=wrap_error_payload(
+            status.HTTP_409_CONFLICT,
+            "Database conflict or constraint violation. Ensure unique fields are not duplicated.",
+        ),
     )
 
 @app.exception_handler(OperationalError)
@@ -105,9 +193,10 @@ async def operational_exception_handler(request: Request, exc: OperationalError)
     logger.error(f"[EMS DB Connection Error] {request.method} {request.url.path}: {safe_err}")
     return JSONResponse(
         status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-        content={
-            "detail": "Database service is temporarily unreachable. Please verify PostgreSQL connection and network settings."
-        }
+        content=wrap_error_payload(
+            status.HTTP_503_SERVICE_UNAVAILABLE,
+            "Database service is temporarily unreachable. Please verify PostgreSQL connection and network settings.",
+        ),
     )
 
 @app.exception_handler(SQLAlchemyError)
@@ -116,9 +205,10 @@ async def sqlalchemy_exception_handler(request: Request, exc: SQLAlchemyError):
     logger.error(f"[EMS DB Error] {request.method} {request.url.path}: {safe_err}")
     return JSONResponse(
         status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-        content={
-            "detail": "A database error occurred. Please verify PostgreSQL data constraints."
-        }
+        content=wrap_error_payload(
+            status.HTTP_500_INTERNAL_SERVER_ERROR,
+            "A database error occurred. Please verify PostgreSQL data constraints.",
+        ),
     )
 
 # Ensure uploads folders exist & mount static uploads
