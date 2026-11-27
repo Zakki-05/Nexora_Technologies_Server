@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timezone
 from decimal import Decimal
 from typing import List, Optional, Tuple
 from sqlalchemy.orm import Session, joinedload
@@ -124,7 +124,7 @@ class ExpenseService:
         claim.status = review_data.status
         claim.reviewer_remarks = review_data.remarks
         claim.reviewed_by = reviewer.id
-        claim.reviewed_at = datetime.utcnow()
+        claim.reviewed_at = datetime.now(timezone.utc)
 
         if review_data.status == "APPROVED":
             claim.approved_amount = review_data.approved_amount if review_data.approved_amount is not None else claim.amount
