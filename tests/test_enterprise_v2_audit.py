@@ -12,14 +12,8 @@ from app.models.employee import Employee
 from app.utils.security import hash_password, create_access_token
 
 @pytest.fixture
-def v2_client(db_session):
-    def override_get_db():
-        yield db_session
-
-    app.dependency_overrides[get_db] = override_get_db
-    with TestClient(app) as c:
-        yield c
-    app.dependency_overrides.clear()
+def v2_client(client):
+    return client
 
 @pytest.fixture
 def v2_seed(db_session):
