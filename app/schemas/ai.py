@@ -87,3 +87,18 @@ class AIProviderConfigUpdate(BaseModel):
     max_tokens_per_request: int | None = Field(default=None, ge=128, le=8192)
     daily_user_token_limit: int | None = Field(default=None, ge=1000, le=5000000)
     temperature: float | None = Field(default=None, ge=0.0, le=1.5)
+
+
+class AIDocumentOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    title: str
+    filename: str
+    content_type: str
+    category: str
+    visibility: str
+    status: str
+    chunk_count: int
+    file_size_bytes: int
+    created_at: datetime

@@ -1,21 +1,24 @@
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Request, UploadFile, status
 from fastapi.responses import StreamingResponse
-from sqlalchemy import func
+from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 
 from app.ai.config import get_ai_settings
 from app.ai.guardrails import check_user_quota, record_ai_audit
 from app.ai.orchestrator import get_or_create_org_config, run_chat, stream_chat
+from app.ai.permissions import is_hr
 from app.ai.providers import SUPPORTED_PROVIDERS
+from app.ai.rag.ingestion import ingest_document
 from app.ai.tools import get_authorized_tools
 from app.database import get_db
 from app.dependencies.auth import get_current_user
-from app.dependencies.permissions import require_admin
+from app.dependencies.permissions import require_admin, require_hr
 from app.models.ai import (
     AIAuditLog,
     AIConversation,
+    AIDocument,
     AIMessage,
     AIMessageFeedback,
     AIUsageLog,
@@ -26,6 +29,7 @@ from app.schemas.ai import (
     AIChatResponse,
     AIConversationOut,
     AIConversationUpdate,
+    AIDocumentOut,
     AIFeedbackCreate,
     AIMessageOut,
     AIProviderConfigOut,
@@ -363,3 +367,83 @@ def get_ai_usage_summary(
             for a in recent_audits
         ],
     }
+
+
+@router.get("/documents", response_model=list[AIDocumentOut])
+def list_ai_documents(
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Session = Depends(get_db),
+):
+    """List knowledge base documents visible to the authenticated user."""
+    allowed = ["organization"]
+    if is_hr(current_user):
+        allowed.append("hr_admin")
+    return (
+        db.query(AIDocument)
+        .filter(
+            AIDocument.organization_id == current_user.organization_id,
+            or_(
+                AIDocument.visibility.in_(allowed),
+                (AIDocument.visibility == "private") & (AIDocument.uploaded_by == current_user.id),
+            ),
+        )
+        .order_by(AIDocument.created_at.desc())
+        .all()
+    )
+
+
+@router.post("/documents", response_model=AIDocumentOut, status_code=status.HTTP_201_CREATED)
+async def upload_ai_document(
+    current_user: Annotated[User, Depends(require_hr)],
+    file: UploadFile = File(...),
+    title: str = Form(""),
+    category: str = Form("hr_policy"),
+    visibility: str = Form("organization"),
+    db: Session = Depends(get_db),
+):
+    """Upload and index an HR policy or company handbook document for RAG (HR/Admin only)."""
+    if visibility not in {"organization", "hr_admin", "private"}:
+        raise HTTPException(status_code=400, detail="Invalid document visibility.")
+
+    raw_bytes = await file.read()
+    if not raw_bytes:
+        raise HTTPException(status_code=400, detail="Uploaded file is empty.")
+    if len(raw_bytes) > 5 * 1024 * 1024:
+        raise HTTPException(status_code=400, detail="Document exceeds 5 MB upload limit.")
+
+    try:
+        doc = await ingest_document(
+            db,
+            current_user,
+            title=title or (file.filename or "Untitled Document"),
+            filename=file.filename or "document.txt",
+            content_type=file.content_type or "text/plain",
+            raw_bytes=raw_bytes,
+            category=category,
+            visibility=visibility,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return doc
+
+
+@router.delete("/documents/{document_id}", status_code=status.HTTP_200_OK)
+def delete_ai_document(
+    document_id: int,
+    current_user: Annotated[User, Depends(require_hr)],
+    db: Session = Depends(get_db),
+):
+    """Delete an indexed knowledge base document (HR/Admin only)."""
+    doc = (
+        db.query(AIDocument)
+        .filter(
+            AIDocument.id == document_id,
+            AIDocument.organization_id == current_user.organization_id,
+        )
+        .first()
+    )
+    if not doc:
+        raise HTTPException(status_code=404, detail="Document not found.")
+    db.delete(doc)
+    db.commit()
+    return {"deleted": True, "document_id": document_id}
