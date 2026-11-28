@@ -21,6 +21,7 @@ logger = logging.getLogger("ems.api")
 from fastapi.staticfiles import StaticFiles
 
 from app.routers import (
+    ai,
     auth,
     employees,
     departments,
@@ -86,8 +87,8 @@ class ResponseEnvelopeMiddleware:
         path = (scope.get("path") or "/").rstrip("/") or "/"
         method = scope.get("method", "GET")
 
-        # Skip docs, OAuth2 token endpoint, and static uploads
-        if path in {"/openapi.json", "/docs", "/redoc", "/docs/oauth2-redirect", "/auth/token"} or path.startswith("/uploads"):
+        # Skip docs, OAuth2 token endpoint, static uploads, and SSE streams
+        if path in {"/openapi.json", "/docs", "/redoc", "/docs/oauth2-redirect", "/auth/token", "/ai/chat/stream"} or path.startswith("/uploads"):
             async def send_with_headers(message):
                 if message["type"] == "http.response.start":
                     headers = list(message.get("headers", []))
@@ -238,6 +239,7 @@ app.include_router(documents.router, prefix="/documents", tags=["Documents"])
 app.include_router(reports.router, prefix="/reports", tags=["Reports"])
 app.include_router(expenses.router, prefix="/expenses", tags=["Expenses"])
 app.include_router(organizations.router, prefix="/organizations", tags=["Organizations"])
+app.include_router(ai.router, prefix="/ai", tags=["Nexora AI"])
 
 @app.get("/", tags=["Home"])
 def home():
