@@ -19,6 +19,16 @@ from app.models.audit_log import AuditLog
 from app.models.document import EmployeeDocument
 from app.models.expense import ExpenseClaim
 from app.models.organization import Organization
+from app.models.ai import (
+    AIConversation,
+    AIMessage,
+    AIMessageFeedback,
+    AIDocument,
+    AIDocumentChunk,
+    AIUsageLog,
+    AIAuditLog,
+    AIProviderConfig,
+)
 
 __all__ = [
     "Organization",
@@ -42,4 +52,12 @@ __all__ = [
     "AuditLog",
     "EmployeeDocument",
     "ExpenseClaim",
+    "AIConversation",
+    "AIMessage",
+    "AIMessageFeedback",
+    "AIDocument",
+    "AIDocumentChunk",
+    "AIUsageLog",
+    "AIAuditLog",
+    "AIProviderConfig",
 ]
