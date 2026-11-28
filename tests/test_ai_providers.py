@@ -117,13 +117,82 @@ def test_provider_factory_resolution():
     provider = get_ai_provider("gemini")
     assert isinstance(provider, GeminiProvider)
 
-    with pytest.raises(AIProviderError) as exc_info:
-        get_ai_provider("openai")
-    assert exc_info.value.code == "provider_not_implemented"
+    for name in ("openai", "anthropic", "groq", "deepseek", "ollama"):
+        resolved = get_ai_provider(name)
+        assert resolved.provider_name == name
 
     with pytest.raises(AIProviderError) as exc_info:
         get_ai_provider("unknown_llm")
     assert exc_info.value.code == "unsupported_provider"
+
+
+def test_multi_provider_mocked_generate(monkeypatch):
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path.endswith("/chat/completions"):
+            return httpx.Response(
+                200,
+                json={
+                    "choices": [{"message": {"content": "OpenAI-compat ok"}, "finish_reason": "stop"}],
+                    "usage": {"prompt_tokens": 5, "completion_tokens": 3, "total_tokens": 8},
+                },
+            )
+        if request.url.path.endswith("/v1/messages"):
+            return httpx.Response(
+                200,
+                json={
+                    "content": [{"type": "text", "text": "Anthropic ok"}],
+                    "usage": {"input_tokens": 4, "output_tokens": 2},
+                    "stop_reason": "end_turn",
+                },
+            )
+        if request.url.path.endswith("/api/chat"):
+            return httpx.Response(
+                200,
+                json={
+                    "message": {"content": "Ollama ok"},
+                    "prompt_eval_count": 3,
+                    "eval_count": 2,
+                },
+            )
+        return httpx.Response(404)
+
+    transport = httpx.MockTransport(handler)
+    real_async_client = httpx.AsyncClient
+    monkeypatch.setattr(httpx, "AsyncClient", lambda *a, **kw: real_async_client(*a, **{**kw, "transport": transport}))
+
+    settings = AISettings(
+        enabled=True,
+        default_provider="gemini",
+        default_model="gemini-2.5-flash",
+        default_embedding_model="text-embedding-004",
+        request_timeout_seconds=10.0,
+        max_tokens_per_request=1024,
+        daily_user_token_limit=10000,
+        max_context_messages=10,
+        temperature=0.2,
+        gemini_api_key="k1",
+        gemini_base_url="https://generativelanguage.googleapis.com/v1beta",
+        openai_api_key="k2",
+        anthropic_api_key="k3",
+        groq_api_key="k4",
+        deepseek_api_key="k5",
+        ollama_base_url="http://localhost:11434",
+    )
+
+    async def run_all():
+        for name, expected in [
+            ("openai", "OpenAI-compat ok"),
+            ("groq", "OpenAI-compat ok"),
+            ("deepseek", "OpenAI-compat ok"),
+            ("anthropic", "Anthropic ok"),
+            ("ollama", "Ollama ok"),
+        ]:
+            prov = get_ai_provider(name, settings)
+            res = await prov.generate([AIMessageInput(role="user", content="Ping")])
+            assert res.content == expected
+            assert res.usage.total_tokens > 0
+
+    asyncio.run(run_all())
 
 
 def test_gemini_requires_api_key():
