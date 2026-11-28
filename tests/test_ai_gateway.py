@@ -96,9 +96,11 @@ def test_ai_chat_with_tool_call_and_conversation_isolation(
 ):
     _seed_org_and_employee(db_session, employee_user)
     monkeypatch.setenv("AI_ENABLED", "true")
+    monkeypatch.setenv("AI_DEFAULT_PROVIDER", "gemini")
+    monkeypatch.setenv("AI_DEFAULT_MODEL", "gemini-3.0-flash")
     monkeypatch.setenv("GEMINI_API_KEY", "test-key-not-real")
 
-    client.put("/ai/config", json={"is_enabled": True}, headers=admin_headers)
+    client.put("/ai/config", json={"is_enabled": True, "active_provider": "gemini", "active_model": "gemini-3.0-flash"}, headers=admin_headers)
 
     call_count = {"n": 0}
 

@@ -9,8 +9,8 @@ SUPPORTED_PROVIDERS: dict[str, dict[str, object]] = {
     "gemini": {
         "label": "Google Gemini",
         "implemented": True,
-        "default_model": "gemini-2.5-flash",
-        "models": ["gemini-2.5-flash", "gemini-2.5-pro", "gemini-2.0-flash"],
+        "default_model": "gemini-3.0-flash",
+        "models": ["gemini-3.0-flash", "gemini-2.5-flash", "gemini-2.5-pro", "gemini-2.0-flash"],
         "embedding_models": ["text-embedding-004"],
     },
     "openai": {

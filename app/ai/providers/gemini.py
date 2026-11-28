@@ -68,18 +68,17 @@ class GeminiProvider(AIProviderBase):
     def _to_gemini_tools(tools: list[AIToolDefinition] | None) -> list[dict[str, Any]] | None:
         if not tools:
             return None
-        return [
-            {
-                "functionDeclarations": [
-                    {
-                        "name": t.name,
-                        "description": t.description,
-                        "parameters": t.parameters,
-                    }
-                    for t in tools
-                ]
+        declarations: list[dict[str, Any]] = []
+        for t in tools:
+            decl: dict[str, Any] = {
+                "name": t.name,
+                "description": t.description,
             }
-        ]
+            props = (t.parameters or {}).get("properties") if isinstance(t.parameters, dict) else None
+            if props:
+                decl["parameters"] = t.parameters
+            declarations.append(decl)
+        return [{"functionDeclarations": declarations}]
 
     def _build_payload(
         self,
@@ -239,6 +238,8 @@ class GeminiProvider(AIProviderBase):
         try:
             async with httpx.AsyncClient(timeout=self._settings.request_timeout_seconds) as client:
                 async with client.stream("POST", url, headers=self._headers(), json=payload) as response:
+                    if response.status_code >= 400:
+                        await response.aread()
                     self._raise_for_status(response)
                     last_usage: AIUsage | None = None
                     last_finish: str | None = None

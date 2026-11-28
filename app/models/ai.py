@@ -244,7 +244,7 @@ class AIProviderConfig(Base):
     )
     active_provider: Mapped[str] = mapped_column(String(50), default="gemini", nullable=False)
     active_model: Mapped[str] = mapped_column(
-        String(100), default="gemini-2.5-flash", nullable=False
+        String(100), default="gemini-3.0-flash", nullable=False
     )
     embedding_model: Mapped[str] = mapped_column(
         String(100), default="text-embedding-004", nullable=False

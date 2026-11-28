@@ -389,15 +389,19 @@ async def stream_chat(
     ip_address: str | None = None,
 ) -> AsyncIterator[str]:
     """Stream AI response tokens as SSE frames and persist the final message."""
-    ctx = await _prepare_chat_context(
-        db,
-        user,
-        message=message,
-        conversation_id=conversation_id,
-        provider_override=provider_override,
-        model_override=model_override,
-        ip_address=ip_address,
-    )
+    try:
+        ctx = await _prepare_chat_context(
+            db,
+            user,
+            message=message,
+            conversation_id=conversation_id,
+            provider_override=provider_override,
+            model_override=model_override,
+            ip_address=ip_address,
+        )
+    except HTTPException as exc:
+        yield format_sse_event("error", {"code": f"http_{exc.status_code}", "message": str(exc.detail)})
+        return
     conv: AIConversation = ctx["conv"]
     config: AIProviderConfig = ctx["config"]
     provider = ctx["provider"]

@@ -22,11 +22,13 @@ from app.models.organization import Organization
 
 def test_ai_settings_safe_defaults(monkeypatch):
     monkeypatch.delenv("AI_ENABLED", raising=False)
+    monkeypatch.delenv("AI_DEFAULT_PROVIDER", raising=False)
+    monkeypatch.delenv("AI_DEFAULT_MODEL", raising=False)
     monkeypatch.delenv("GEMINI_API_KEY", raising=False)
     settings = get_ai_settings()
     assert settings.enabled is False
     assert settings.default_provider == "gemini"
-    assert settings.default_model == "gemini-2.5-flash"
+    assert settings.default_model == "gemini-3.0-flash"
     assert settings.has_provider_credentials("gemini") is False
 
 

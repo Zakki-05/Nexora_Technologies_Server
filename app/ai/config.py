@@ -68,7 +68,7 @@ def get_ai_settings() -> AISettings:
     return AISettings(
         enabled=_env_bool("AI_ENABLED", False),
         default_provider=os.getenv("AI_DEFAULT_PROVIDER", "gemini").strip().lower(),
-        default_model=os.getenv("AI_DEFAULT_MODEL", "gemini-2.5-flash").strip(),
+        default_model=os.getenv("AI_DEFAULT_MODEL", "gemini-3.0-flash").strip(),
         default_embedding_model=os.getenv("AI_EMBEDDING_MODEL", "text-embedding-004").strip(),
         request_timeout_seconds=_env_float("AI_REQUEST_TIMEOUT_SECONDS", 30.0),
         max_tokens_per_request=_env_int("AI_MAX_TOKENS_PER_REQUEST", 2048),

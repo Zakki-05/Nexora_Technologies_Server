@@ -92,20 +92,29 @@ def init_db():
             print(f"[EMS DB] CRITICAL: Cannot connect to PostgreSQL at {mask_connection_string(DATABASE_URL)}. Details: {msg}")
             return
 
+        import app.models  # noqa: F401 - ensure all ORM models are registered
+        Base.metadata.create_all(bind=engine)
+
+        # Safely add organization_id on pre-existing tables if missing
+        with engine.begin() as conn:
+            conn.execute(
+                text(
+                    "INSERT INTO organizations (id, name, slug, company_code, timezone, is_active, subscription_plan) "
+                    "VALUES (1, 'Nexora Technologies Inc.', 'nexora', 'NEX-001', 'Asia/Kolkata', true, 'ENTERPRISE') "
+                    "ON CONFLICT (id) DO NOTHING"
+                )
+            )
+            for tbl in ("users", "employees", "departments"):
+                conn.execute(
+                    text(
+                        f"ALTER TABLE {tbl} ADD COLUMN IF NOT EXISTS organization_id INTEGER NOT NULL DEFAULT 1"
+                    )
+                )
+
         inspector = inspect(engine)
         existing_tables = inspector.get_table_names()
-        
-        if existing_tables:
-            logger.info(f"[EMS DB] Verified PostgreSQL schema. {len(existing_tables)} tables present.")
-            print(f"[EMS DB] Verified PostgreSQL schema. {len(existing_tables)} tables present.")
-        else:
-            # Completely fresh empty database (e.g. initial dev setup)
-            is_production = os.getenv("ENVIRONMENT", "").lower() == "production" or os.environ.get("VERCEL")
-            if not is_production:
-                print("[EMS DB] Empty database detected in development. Creating tables...")
-                Base.metadata.create_all(bind=engine)
-            else:
-                logger.warning("[EMS DB] Database contains no tables in production. Manual migration recommended.")
+        logger.info(f"[EMS DB] Verified PostgreSQL schema. {len(existing_tables)} tables present.")
+        print(f"[EMS DB] Verified PostgreSQL schema. {len(existing_tables)} tables present.")
     except Exception as e:
         safe_err = re.sub(r':([^:@]+)@', ':***@', str(e))
         logger.error(f"[EMS DB] Startup initialization notice: {safe_err}")
